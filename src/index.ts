@@ -54,6 +54,7 @@ interface EmailContent {
 // OAuth2 configuration
 let oauth2Client: OAuth2Client;
 let authorizedScopes: string[] = DEFAULT_SCOPES;
+let oauthPort: number = 3000;
 
 /**
  * Recursively extract email body content from MIME message parts
@@ -162,10 +163,17 @@ async function loadCredentials() {
         // Parse callback URL from args (must be a URL, not a flag)
         // Supports: node index.js auth https://example.com/callback
         // Or: node index.js auth --scopes=gmail.readonly (uses default callback)
+        // Or: node index.js auth --port=4000 (custom port for OAuth listener)
         const callbackArg = process.argv.find(arg =>
             arg.startsWith('http://') || arg.startsWith('https://')
         );
-        const callback = callbackArg || "http://localhost:3000/oauth2callback";
+        const portArg = process.argv.find(arg => arg.startsWith('--port='));
+        oauthPort = portArg ? parseInt(portArg.slice('--port='.length), 10) : 3000;
+        if (isNaN(oauthPort) || oauthPort < 1 || oauthPort > 65535) {
+            console.error('Error: Invalid port number. Must be between 1 and 65535.');
+            process.exit(1);
+        }
+        const callback = callbackArg || `http://localhost:${oauthPort}/oauth2callback`;
 
         oauth2Client = new OAuth2Client(
             keys.client_id,
@@ -197,9 +205,9 @@ async function loadCredentials() {
     }
 }
 
-async function authenticate(scopes: string[]) {
+async function authenticate(scopes: string[], port: number = 3000) {
     const server = http.createServer();
-    server.listen(3000, '127.0.0.1');
+    server.listen(port, '127.0.0.1');
 
     // Convert shorthand scope names (e.g., "gmail.readonly") to full Google API URLs
     const scopeUrls = scopeNamesToUrls(scopes);
@@ -217,7 +225,7 @@ async function authenticate(scopes: string[]) {
         server.on('request', async (req, res) => {
             if (!req.url?.startsWith('/oauth2callback')) return;
 
-            const url = new URL(req.url, 'http://localhost:3000');
+            const url = new URL(req.url, `http://localhost:${port}`);
             const code = url.searchParams.get('code');
 
             if (!code) {
@@ -277,7 +285,7 @@ async function main() {
             console.log('Available scopes:', getAvailableScopeNames().join(', '));
         }
 
-        await authenticate(scopes);
+        await authenticate(scopes, oauthPort);
         console.log('Authentication completed successfully');
         process.exit(0);
     }
