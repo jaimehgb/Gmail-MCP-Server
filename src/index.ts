@@ -167,8 +167,13 @@ async function loadCredentials() {
         const callbackArg = process.argv.find(arg =>
             arg.startsWith('http://') || arg.startsWith('https://')
         );
-        const portArg = process.argv.find(arg => arg.startsWith('--port='));
-        oauthPort = portArg ? parseInt(portArg.slice('--port='.length), 10) : 3000;
+        const portEqualsArg = process.argv.find(arg => arg.startsWith('--port='));
+        const portSpaceIdx = process.argv.indexOf('--port');
+        if (portEqualsArg) {
+            oauthPort = parseInt(portEqualsArg.slice('--port='.length), 10);
+        } else if (portSpaceIdx !== -1 && process.argv[portSpaceIdx + 1]) {
+            oauthPort = parseInt(process.argv[portSpaceIdx + 1], 10);
+        }
         if (isNaN(oauthPort) || oauthPort < 1 || oauthPort > 65535) {
             console.error('Error: Invalid port number. Must be between 1 and 65535.');
             process.exit(1);
