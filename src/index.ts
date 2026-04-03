@@ -55,6 +55,22 @@ interface EmailContent {
 let oauth2Client: OAuth2Client;
 let authorizedScopes: string[] = DEFAULT_SCOPES;
 let oauthPort: number = 3000;
+let oauthHost: string = '127.0.0.1';
+
+function parseStringFlag(flag: string, defaultValue: string): string {
+    const equalsArg = process.argv.find(arg => arg.startsWith(`${flag}=`));
+    if (equalsArg) return equalsArg.slice(flag.length + 1);
+    const idx = process.argv.indexOf(flag);
+    if (idx !== -1 && process.argv[idx + 1] && !process.argv[idx + 1].startsWith('--')) {
+        return process.argv[idx + 1];
+    }
+    return defaultValue;
+}
+
+function parseIntFlag(flag: string, defaultValue: number): number {
+    const value = parseStringFlag(flag, String(defaultValue));
+    return parseInt(value, 10);
+}
 
 /**
  * Recursively extract email body content from MIME message parts
@@ -160,25 +176,23 @@ async function loadCredentials() {
             process.exit(1);
         }
 
-        // Parse callback URL from args (must be a URL, not a flag)
-        // Supports: node index.js auth https://example.com/callback
-        // Or: node index.js auth --scopes=gmail.readonly (uses default callback)
-        // Or: node index.js auth --port=4000 (custom port for OAuth listener)
+        // Parse CLI flags for OAuth listener configuration
+        // --port=4000 or --port 4000: custom port for OAuth listener
+        // --host=0.0.0.0 or --host 0.0.0.0: custom bind address
+        // --callback=URL or --callback URL: full custom callback URL
+        // Legacy: bare http(s):// URL argument for callback
         const callbackArg = process.argv.find(arg =>
             arg.startsWith('http://') || arg.startsWith('https://')
         );
-        const portEqualsArg = process.argv.find(arg => arg.startsWith('--port='));
-        const portSpaceIdx = process.argv.indexOf('--port');
-        if (portEqualsArg) {
-            oauthPort = parseInt(portEqualsArg.slice('--port='.length), 10);
-        } else if (portSpaceIdx !== -1 && process.argv[portSpaceIdx + 1]) {
-            oauthPort = parseInt(process.argv[portSpaceIdx + 1], 10);
-        }
+
+        oauthPort = parseIntFlag('--port', 3000);
         if (isNaN(oauthPort) || oauthPort < 1 || oauthPort > 65535) {
             console.error('Error: Invalid port number. Must be between 1 and 65535.');
             process.exit(1);
         }
-        const callback = callbackArg || `http://localhost:${oauthPort}/oauth2callback`;
+        oauthHost = parseStringFlag('--host', '127.0.0.1');
+        const callbackFlag = parseStringFlag('--callback', '');
+        const callback = callbackFlag || callbackArg || `http://localhost:${oauthPort}/oauth2callback`;
 
         oauth2Client = new OAuth2Client(
             keys.client_id,
@@ -210,9 +224,9 @@ async function loadCredentials() {
     }
 }
 
-async function authenticate(scopes: string[], port: number = 3000) {
+async function authenticate(scopes: string[], port: number = 3000, host: string = '127.0.0.1') {
     const server = http.createServer();
-    server.listen(port, '127.0.0.1');
+    server.listen(port, host);
 
     // Convert shorthand scope names (e.g., "gmail.readonly") to full Google API URLs
     const scopeUrls = scopeNamesToUrls(scopes);
@@ -290,7 +304,7 @@ async function main() {
             console.log('Available scopes:', getAvailableScopeNames().join(', '));
         }
 
-        await authenticate(scopes, oauthPort);
+        await authenticate(scopes, oauthPort, oauthHost);
         console.log('Authentication completed successfully');
         process.exit(0);
     }
